@@ -1190,6 +1190,13 @@ def do_save(account, tasklist=[]):
                 if data.get("config"):
                     CONFIG_DATA["plugins"][plugin_name] = data["config"]
     print()
+    print(f"===============插件收尾===============")
+    for plugin_name, plugin in plugins.items():
+        if plugin.is_active and hasattr(plugin, "task_after"):
+            data = plugin.task_after()
+            if data.get("config"):
+                CONFIG_DATA["plugins"][plugin_name] = data["config"]
+    print()
 
 
 def main():
