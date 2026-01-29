@@ -1084,7 +1084,13 @@ def do_sign(account):
     # 每日领空间
     growth_info = account.get_growth_info()
     if growth_info:
-        growth_message = f"💾 {'88VIP' if growth_info['88VIP'] else '普通用户'} 总空间：{format_bytes(growth_info['total_capacity'])}，签到累计获得：{format_bytes(growth_info['cap_composition'].get('sign_reward', 0))}"
+        VIP_MAP = {
+            "NORMAL": "普通用户",
+            "EXP_SVIP": "88VIP",
+            "SUPER_VIP": "SVIP",
+            "Z_VIP": "SVIP+",
+        }
+        growth_message = f"💾 {VIP_MAP.get(growth_info['member_type'], growth_info['member_type'])} 总空间：{format_bytes(growth_info['total_capacity'])}，签到累计获得：{format_bytes(growth_info['cap_composition'].get('sign_reward', 0))}"
         if growth_info["cap_sign"]["sign_daily"]:
             sign_message = f"📅 签到记录: 今日已签到+{int(growth_info['cap_sign']['sign_daily_reward']/1024/1024)}MB，连签进度({growth_info['cap_sign']['sign_progress']}/{growth_info['cap_sign']['sign_target']})✅"
             message = f"{sign_message}\n{growth_message}"
@@ -1133,6 +1139,12 @@ def do_save(account, tasklist=[]):
             or (datetime.today().weekday() + 1 in task.get("runweek"))
         )
 
+    for plugin_name, plugin in plugins.items():
+        if plugin.is_active and hasattr(plugin, "task_before"):
+            tasklist = (
+                plugin.task_before(tasklist=tasklist, account=account) or tasklist
+            )
+
     # 执行任务
     for index, task in enumerate(tasklist):
         print()
@@ -1178,7 +1190,7 @@ def do_save(account, tasklist=[]):
             if is_new_tree:
                 print(f"🧩 调用插件")
                 for plugin_name, plugin in plugins.items():
-                    if plugin.is_active:
+                    if plugin.is_active and hasattr(plugin, "run"):
                         task = (
                             plugin.run(task, account=account, tree=is_new_tree) or task
                         )
@@ -1193,7 +1205,9 @@ def do_save(account, tasklist=[]):
     print(f"===============插件收尾===============")
     for plugin_name, plugin in plugins.items():
         if plugin.is_active and hasattr(plugin, "task_after"):
-            data = plugin.task_after()
+            data = plugin.task_after(tasklist=tasklist, account=account)
+            if data.get("tasklist"):
+                CONFIG_DATA["tasklist"] = data["tasklist"]
             if data.get("config"):
                 CONFIG_DATA["plugins"][plugin_name] = data["config"]
     print()
