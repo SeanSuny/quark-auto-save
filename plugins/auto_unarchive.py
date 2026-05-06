@@ -7,6 +7,7 @@ import traceback
 class Auto_unarchive:
     default_config = {
         "tips_": "自动云解压(zip|rar|7z)到保存目录，在任务插件选项中启用，该功能需SVIP支持",
+        "global_enable": False,  # 是否全局开启自动解压
         "max_concurrent": 3,  # 限制同时解压的任务数
     }
 
@@ -29,11 +30,11 @@ class Auto_unarchive:
         account = kwargs.get("account")
         tree = kwargs.get("tree")
 
-        task_config = task.get("addition", {}).get(
-            self.plugin_name, self.default_task_config
-        )
-        if not self.is_active or not task_config.get("enable"):
-            return task
+        task_config = task.get("addition", {}).get(self.plugin_name, self.default_task_config)
+
+        if not str(self.global_enable).lower() == "true":
+            if not task_config.get("enable"):
+                return task
 
         # 任务配置中是否自动删除原始文件
         self.auto_clean = task_config.get("auto_clean", True)
@@ -109,18 +110,14 @@ class Auto_unarchive:
                     elif q_res.get("code") == 1:
                         pass
                     else:
-                        print(
-                            f"  ⚠️ 任务异常: {p_task['zip_name']} {q_res.get('message','')}"
-                        )
+                        print(f"  ⚠️ 任务异常: {p_task['zip_name']} {q_res.get('message','')}")
                         active_tasks.remove(p_task)
 
                 if active_tasks:
                     time.sleep(5)
 
             if all_move_fids:
-                print(
-                    f"🚀 任务全部解压完成，开始批量移动 {len(all_move_fids)} 个文件..."
-                )
+                print(f"🚀 任务全部解压完成，开始批量移动 {len(all_move_fids)} 个文件...")
                 if account.move_files(all_move_fids, target_pdir_fid).get("code") == 0:
                     if all_cleanup_fids and account.delete(all_cleanup_fids):
                         print(f"🧹 批量清理完成")

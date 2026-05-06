@@ -147,6 +147,12 @@
                   <div v-if="key.startsWith('tips_')">
                     <div class="alert alert-warning" role="alert">{{ value }}</div>
                   </div>
+                  <div v-else-if="typeof value === 'boolean'" class="form-group row mb-2">
+                    <label class="col-sm-2 col-form-label">{{ key }}</label>
+                    <div class="col-sm-10 d-flex align-items-center">
+                      <input type="checkbox" class="form-check-input ml-0 mt-0" v-model="formData.plugins[pluginName][key]">
+                    </div>
+                  </div>
                   <div v-else class="form-group row">
                     <label class="col-sm-2 col-form-label">{{ key }}</label>
                     <div class="col-sm-10">
@@ -1001,7 +1007,7 @@
                     }
                     break;
                   }
-                  this.run_log += eventData.replace('<', '<\u200B') + '\n';
+                  this.run_log += eventData + '\n';
                   // 在更新 run_log 后将滚动条滚动到底部
                   this.$nextTick(() => {
                     const modalBody = document.querySelector('.modal-body');
@@ -1228,17 +1234,23 @@
           this.getShareDetail();
         },
         switchShare(index) {
-          currentIndex = this.smart_param.taskSuggestions.data.indexOf(this.fileSelect.share);
-          nextIndex = currentIndex + index;
+          const data = this.smart_param.taskSuggestions.data;
+          let currentIndex = data.indexOf(this.fileSelect.share);
+          let nextIndex = currentIndex + index;
+          // 跳过已验证失败的分享链接
+          while (nextIndex >= 0 && nextIndex < data.length) {
+            if (data[nextIndex].verify !== false) break;
+            nextIndex += index;
+          }
           if (nextIndex < 0) {
             this.showToast("没有上一个啦", "info");
-          } else if (nextIndex >= this.smart_param.taskSuggestions.data.length) {
+          } else if (nextIndex >= data.length) {
             this.showToast("没有下一个啦", "info");
           } else {
             this.fileSelect.error = "";
             this.fileSelect.stoken = "";
-            this.fileSelect.share = this.smart_param.taskSuggestions.data[nextIndex];
-            this.fileSelect.shareurl = this.smart_param.taskSuggestions.data[nextIndex].shareurl;
+            this.fileSelect.share = data[nextIndex];
+            this.fileSelect.shareurl = data[nextIndex].shareurl;
             this.fileSelect.paths = [];
             this.fileSelect.fileList = [];
             this.getShareDetail();
