@@ -358,6 +358,16 @@ def get_share_detail():
     ] or paths
     data["stoken"] = stoken
 
+    # 过滤 01x.mp4 类型无效视频格式
+    if os.getenv("FILTER_INVALID_VIDEO", "true") == "true":
+        for share_file in data["list"]:
+            if (
+                share_file["file_name"].lower().endswith((".mp4", ".mkv"))
+                and not share_file["dir"]
+                and share_file["obj_category"] != "video"
+            ):
+                return jsonify({"success": False, "data": {"error": "无效视频格式"}})
+
     # 正则处理预览
     def preview_regex(data):
         task = request.json.get("task", {})

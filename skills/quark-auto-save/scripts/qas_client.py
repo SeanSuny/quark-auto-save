@@ -4,29 +4,64 @@
 quark-auto-Save API Python Wrapper
 
 Usage:
-    python qas_client.py data                    # Get all config
-    python qas_client.py search <query>          # Search resources
-    python qas_client.py detail <shareurl>       # Get share detail
-    python qas_client.py add <task.json>         # Add task
-    python qas_client.py run [<taskname>]        # Run task(s)
-    python qas_client.py tasks                   # List all tasks
-    python qas_client.py savepath <path>         # Check savepath
+    python3 qas_client.py data                    # Get all config
+    python3 qas_client.py search <query> [-d]     # Search resources
+    python3 qas_client.py detail <shareurl>       # Get share detail
+    python3 qas_client.py savepath <path>         # Check savepath
+    python3 qas_client.py delete <fid>            # Delete file
+    python3 qas_client.py add-task <task.json>    # Add task
+    python3 qas_client.py run-task [<taskname>]   # Run task(s)
+    python3 qas_client.py update-task <name> <json> # Update task
+    python3 qas_client.py delete-task <taskname>  # Delete task
+    python3 qas_client.py update <json>           # Update config
 """
 
 import os
 import sys
+import io
 import json
 import urllib.request
 import urllib.parse
 import urllib.error
 import argparse
 
+# Fix Windows console encoding (GBK can't handle emoji/CJK)
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+
 # Config
 QAS_BASE_URL = os.environ.get("QAS_BASE_URL", "")
 QAS_TOKEN = os.environ.get("QAS_TOKEN", "")
 
 
-def get(endpoint: str, params: dict = None) -> dict:
+def get_error(result: dict) -> str:
+    """Extract error message from API response"""
+    return result.get("message") or result.get("data", {}).get("error") or "Unknown error"
+
+
+def ok(data=None):
+    """Print success: 'OK' or 'OK <json>'"""
+    if data is not None:
+        print(f"OK {json.dumps(data, separators=(',', ':'), ensure_ascii=False)}")
+    else:
+        print("OK")
+
+
+def fail(msg: str):
+    """Print error: 'ERROR: message'"""
+    print(f"ERROR: {msg}")
+
+
+def parse_json_arg(arg: str) -> dict:
+    """Parse JSON from string or file path"""
+    try:
+        return json.loads(arg)
+    except json.JSONDecodeError:
+        with open(arg, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+
+def get(endpoint: str, params: dict = {}) -> dict:
     """GET request to QAS API"""
     url = f"{QAS_BASE_URL}{endpoint}"
     params = params or {}
@@ -42,7 +77,7 @@ def get(endpoint: str, params: dict = None) -> dict:
         return {"success": False, "message": str(e)}
 
 
-def post(endpoint: str, data: dict = None, raw: bool = False) -> dict:
+def post(endpoint: str, data: dict = {}, raw: bool = False) -> dict:
     """POST request to QAS API - token must be in query param, not body"""
     url = f"{QAS_BASE_URL}{endpoint}"
     data = data or {}
@@ -73,125 +108,164 @@ def cmd_data():
     """Get all config and tasks"""
     result = get("/data")
     if result.get("success"):
-        data = result["data"]
-        print(f"=== Config ===")
-        print(f"API Token: {data.get('api_token')}")
-        print(f"Crontab: {data.get('crontab')}")
-        print(f"Tasks: {len(data.get('tasklist', []))}")
-        print(f"\n=== Task List ===")
-        for i, task in enumerate(data.get("tasklist", []), 1):
-            enabled = "✓" if task.get("enabled", True) else "✗"
-            print(f"{i}. [{enabled}] {task.get('taskname')}")
-            print(f"   URL: {task.get('shareurl')[:60]}...")
-            print(f"   Save: {task.get('savepath')}")
-            print(f"   Pattern: {task.get('pattern')} -> {task.get('replace')}")
+        ok(result["data"])
     else:
-        print(f"Error: {result.get('message')}")
-    return result
+        fail(get_error(result))
 
 
 def cmd_search(query: str, deep: bool = False):
-    """Search resources"""
+    """Search resources - improved filtering for better results"""
     result = get("/task_suggestions", {"q": query, "d": "1" if deep else "0"})
     if result.get("success"):
         data = result.get("data", [])
-        print(f"=== Search Results for '{query}' ({len(data)} found) ===")
-        for item in data:
-            title = item.get("title", "Untitled")
-            shareurl = item.get("shareurl", "")
-            datetime = item.get("datetime", "")
-            print(f"- {title}")
-            print(f"  URL: {shareurl}")
-            print(f"  Time: {datetime}")
+        q = query.lower()
+        content = [
+            i
+            for i in data
+            if q in i.get("taskname", "").lower() or q in i.get("content", "").lower()
+        ]
+        ok(content or data[:20])
     else:
-        print(f"Error: {result.get('message')}")
-    return result
+        fail(get_error(result))
 
 
-def cmd_detail(shareurl: str, task: dict = None):
-    """Get share detail"""
+def cmd_detail(shareurl: str, task: dict = {}):
+    """Get share detail - output key info only (max 10 files)"""
     data = {"shareurl": shareurl}
     if task:
-        data["task"] = task
+        data["task"] = task  # type: ignore
     result = post("/get_share_detail", data)
     if result.get("success"):
-        data = result["data"]
-        print(f"=== Share Detail ===")
-        print(f"Name: {data.get('file_name')}")
-        print(f"Type: {'Folder' if data.get('dir') else 'File'}")
-        print(f"\n=== Files ({len(data.get('list', []))}) ===")
-        for f in data.get("list", [])[:20]:
-            icon = "📁" if f.get("dir") else "📄"
-            size = f.get("size", "")
-            print(f"{icon} {f.get('file_name')} ({size})")
-        if len(data.get("list", [])) > 20:
-            print(f"... and {len(data.get('list', [])) - 20} more")
+        result_data = result["data"]
 
-        # Show paths (breadcrumb)
-        paths = data.get("paths", [])
-        if paths:
-            print(f"\n=== Path ===")
-            print("/" + "/".join(p.get("name", "") for p in paths))
+        # Get share info (contains title, file_num, etc.)
+        share_info = result_data.get("share", {})
+
+        # Get file list
+        file_list = result_data.get("list", [])
+        total_count = len(file_list)
+
+        # Output key info
+        info = {"name": share_info.get("title"), "total": total_count, "files": []}
+
+        # Extract key file info (max 10)
+        files = file_list[:10]
+        for f in files:
+            file_info = {
+                "name": f.get("file_name"),
+                "fid": f.get("fid"),
+                "is_dir": f.get("dir", False),
+                "size": f.get("size", 0),
+            }
+            # Include category for files
+            if f.get("category") is not None:
+                file_info["type"] = "video" if f.get("category") == 1 else "other"
+            info["files"].append(file_info)
+
+        # Add note if there are more files
+        if total_count > 10:
+            info["note"] = f"...还有 {total_count - 10} 个文件"
+
+        # Add path info if available
+        if share_info.get("path_info"):
+            info["path"] = share_info["path_info"]
+
+        ok(info)
     else:
-        error = result.get("data", {}).get("error") or result.get("message")
-        print(f"Error: {error}")
-    return result
+        fail(get_error(result))
 
 
-def cmd_add(task_file: str):
-    """Add new task"""
-    with open(task_file, "r", encoding="utf-8") as f:
-        task = json.load(f)
-    task.pop("addition", None)
+def _detect_auto_unarchive(task: dict, auto_clean_zipdir: bool = False) -> dict:
+    """Auto-detect auto-unarchive config from share files"""
+    ARCHIVE_EXT = {".zip", ".rar", ".7z"}
+    shareurl = task.get("shareurl", "")
+    if not shareurl:
+        return {}
+    detail = post("/get_share_detail", {"shareurl": shareurl})
+    if not detail.get("success"):
+        return {}
+    files = detail.get("data", {}).get("list", [])
+    has_archive = any(
+        any(f.get("file_name", "").lower().endswith(ext) for ext in ARCHIVE_EXT) for f in files
+    )
+    if not has_archive:
+        return {}
+    return {
+        "auto_unarchive": {
+            "enable": True,
+            "auto_clean": True,
+            "auto_clean_zipdir": auto_clean_zipdir,
+        }
+    }
+
+
+def cmd_add(task_json: str):
+    """Add new task from JSON string or file"""
+    task = parse_json_arg(task_json)
+    # Auto-detect addition if not explicitly set
+    if not task.get("addition", {}).get("auto_unarchive"):
+        auto_unarchive = _detect_auto_unarchive(task)
+        if auto_unarchive:
+            task.setdefault("addition", {}).update(auto_unarchive)
     result = post("/api/add_task", task)
     if result.get("success"):
-        print(f"✓ Task added: {task.get('taskname')}")
+        ok()
     else:
-        print(f"Error: {result.get('message')}")
-    return result
+        fail(get_error(result))
 
 
-def cmd_run(taskname: str = None):
-    """Run task manually - returns SSE stream, print directly"""
+def cmd_run(taskname: str = "", task_json: str = ""):
+    """Run task manually - returns SSE stream as JSON"""
     data = {}
-    if taskname:
+
+    # Mode 3: Direct task parameters (no save)
+    if task_json:
+        try:
+            task = json.loads(task_json)
+            # Auto-detect addition if not explicitly set
+            if not task.get("addition", {}).get("auto_unarchive"):
+                auto_unarchive = _detect_auto_unarchive(task, auto_clean_zipdir=True)
+                if auto_unarchive:
+                    task.setdefault("addition", {}).update(auto_unarchive)
+            data["tasklist"] = [task] if isinstance(task, dict) else task
+        except json.JSONDecodeError:
+            fail("Invalid JSON for direct task")
+            return
+
+    # Mode 2: Run specific saved task
+    elif taskname:
         result = get("/data")
-        if result.get("success"):
-            task = next(
-                (
-                    t
-                    for t in result["data"].get("tasklist", [])
-                    if t.get("taskname") == taskname
-                ),
-                None,
-            )
-            if task:
-                data["tasklist"] = [task]
-            else:
-                print(f"Error: Task '{taskname}' not found")
-                return result
-        else:
-            print(f"Error: {result.get('message')}")
-            return result
-    print(f"Running task{' ' + taskname if taskname else 's'}...")
-    print("-" * 40)
+        if not result.get("success"):
+            fail(get_error(result))
+            return
+        task = next(
+            (t for t in result["data"].get("tasklist", []) if t.get("taskname") == taskname),
+            None,
+        )
+        if not task:
+            fail(f"Task '{taskname}' not found")
+            return
+        data["tasklist"] = [task]
+
+    # Mode 1: Run all tasks (empty data)
 
     # Use raw=True to get plain text response
     result = post("/run_script_now", data, raw=True)
     if result.get("success"):
+        print("OK")
         raw = result.get("raw", "")
         # Parse SSE-like format: "data: <content>"
         for line in raw.split("\n"):
             if line.startswith("data: "):
                 content = line[6:]  # Remove "data: " prefix
-                print(content)
+                if content and content != "[DONE]":
+                    print(content)
     else:
-        print(f"Error: {result.get('message')}")
-    return result
+        fail(get_error(result))
 
 
-def cmd_savepath(path: str = None, fid: str = None):
-    """Get savepath detail"""
+def cmd_savepath(path: str = "", fid: str = ""):
+    """Get savepath detail - output key info only (max 10 files)"""
     params = {}
     if path:
         params["path"] = path
@@ -200,28 +274,96 @@ def cmd_savepath(path: str = None, fid: str = None):
     result = get("/get_savepath_detail", params)
     if result.get("success"):
         data = result["data"]
-        print(f"=== Savepath Detail ===")
-        paths = data.get("paths", [])
-        if paths:
-            print(f"Path: /" + "/".join(p.get("name", "") for p in paths))
-        print(f"\n=== Files ({len(data.get('list', []))}) ===")
-        for f in data.get("list", [])[:30]:
-            icon = "📁" if f.get("dir") else "📄"
-            size = f.get("size", "")
-            print(f"{icon} {f.get('file_name')} ({size})")
+        total_count = len(data.get("list", []))
+        # Output key info only
+        info = {"total": total_count, "files": []}
+
+        # Add path info
+        if data.get("paths"):
+            info["path"] = "/" + "/".join(p.get("name", "") for p in data["paths"])
+
+        # Extract key file info (max 10)
+        files = data.get("list", [])[:10]
+        for f in files:
+            file_info = {
+                "name": f.get("file_name"),
+                "is_dir": f.get("dir", False),
+                "size": f.get("size", 0),
+            }
+            info["files"].append(file_info)
+
+        # Add note if there are more files
+        if total_count > 10:
+            info["note"] = f"...还有 {total_count - 10} 个文件"
+
+        ok(info)
     else:
-        print(f"Error: {result.get('message')}")
-    return result
+        fail(get_error(result))
+
+
+def cmd_delete_task(taskname: str):
+    """Delete a task from tasklist by name"""
+    result = get("/data")
+    if not result.get("success"):
+        fail(get_error(result))
+        return
+    tasklist = result["data"].get("tasklist", [])
+    new_tasklist = [t for t in tasklist if t.get("taskname") != taskname]
+    if len(new_tasklist) == len(tasklist):
+        fail(f"Task '{taskname}' not found")
+        return
+    update_result = post("/update", {"tasklist": new_tasklist})
+    if update_result.get("success"):
+        ok({"message": f"Task '{taskname}' deleted"})
+    else:
+        fail(get_error(update_result))
+
+
+def cmd_update(update_json: str):
+    """Update config via JSON string or file"""
+    result = get("/data")
+    if not result.get("success"):
+        fail(get_error(result))
+        return
+    data = parse_json_arg(update_json)
+    result.update(data)
+    update_result = post("/update", result)
+    if update_result.get("success"):
+        ok()
+    else:
+        fail(get_error(update_result))
+
+
+def cmd_update_task(taskname: str, update_json: str):
+    """Update a specific task by name with partial fields"""
+    result = get("/data")
+    if not result.get("success"):
+        fail(get_error(result))
+        return
+    tasklist = result["data"].get("tasklist", [])
+    task = next((t for t in tasklist if t.get("taskname") == taskname), None)
+    if not task:
+        fail(f"Task '{taskname}' not found")
+        return
+    updates = parse_json_arg(update_json)
+    # Remove shareurl_ban
+    task.pop("shareurl_ban", None)
+    task.update(updates)
+    new_tasklist = [task if t.get("taskname") == taskname else t for t in tasklist]
+    update_result = post("/update", {"tasklist": new_tasklist})
+    if update_result.get("success"):
+        ok({"message": f"Task '{taskname}' updated", "task": task})
+    else:
+        fail(get_error(update_result))
 
 
 def cmd_delete(fid: str):
     """Delete file"""
     result = post("/delete_file", {"fid": fid})
     if result.get("success"):
-        print(f"✓ File deleted")
+        ok()
     else:
-        print(f"Error: {result.get('message')}")
-    return result
+        fail(get_error(result))
 
 
 def main():
@@ -232,11 +374,13 @@ def main():
             "data",
             "search",
             "detail",
-            "add",
-            "run",
-            "tasks",
+            "add-task",
+            "run-task",
             "savepath",
             "delete",
+            "delete-task",
+            "update",
+            "update-task",
         ],
         help="Command to execute",
     )
@@ -246,41 +390,67 @@ def main():
     args = parser.parse_args()
 
     if not QAS_TOKEN:
-        print("Error: QAS_TOKEN not set. Set environment variable or update TOOLS.md")
+        fail("QAS_TOKEN not set. Set environment variable or update TOOLS.md")
         sys.exit(1)
 
     if args.command == "data":
         cmd_data()
     elif args.command == "search":
         if not args.args:
-            print("Usage: search <query>")
+            fail("Usage: search <query>")
             sys.exit(1)
         cmd_search(args.args[0], args.deep)
     elif args.command == "detail":
         if not args.args:
-            print("Usage: detail <shareurl>")
+            fail("Usage: detail <shareurl>")
             sys.exit(1)
         cmd_detail(args.args[0])
-    elif args.command == "add":
+    elif args.command == "add-task":
         if not args.args:
-            print("Usage: add <task.json>")
+            fail("Usage: add-task <json_string_or_file>")
             sys.exit(1)
         cmd_add(args.args[0])
-    elif args.command == "run":
-        taskname = args.args[0] if args.args else None
-        cmd_run(taskname)
-    elif args.command == "tasks":
-        result = cmd_data()
+    elif args.command == "run-task":
+        if not args.args:
+            # Run all tasks
+            cmd_run()
+        elif len(args.args) == 1:
+            # Check if it's JSON or taskname
+            arg = args.args[0]
+            if arg.startswith("{") or arg.startswith("["):
+                # Direct JSON task
+                cmd_run(task_json=arg)
+            else:
+                # Saved task name
+                cmd_run(taskname=arg)
+        else:
+            fail("Usage: run-task [taskname|json_string]")
+            sys.exit(1)
     elif args.command == "savepath":
         if not args.args:
-            print("Usage: savepath <path>")
+            fail("Usage: savepath <path>")
             sys.exit(1)
         cmd_savepath(args.args[0])
     elif args.command == "delete":
         if not args.args:
-            print("Usage: delete <fid>")
+            fail("Usage: delete <fid>")
             sys.exit(1)
         cmd_delete(args.args[0])
+    elif args.command == "delete-task":
+        if not args.args:
+            fail("Usage: delete-task <taskname>")
+            sys.exit(1)
+        cmd_delete_task(args.args[0])
+    elif args.command == "update":
+        if not args.args:
+            fail("Usage: update <json_string_or_file>")
+            sys.exit(1)
+        cmd_update(args.args[0])
+    elif args.command == "update-task":
+        if len(args.args) < 2:
+            fail("Usage: update-task <taskname> <json_string_or_file>")
+            sys.exit(1)
+        cmd_update_task(args.args[0], args.args[1])
 
 
 if __name__ == "__main__":
