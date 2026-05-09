@@ -11,7 +11,7 @@ Usage:
     python3 qas_client.py delete <fid>            # Delete file
     python3 qas_client.py add-task <task.json>    # Add task
     python3 qas_client.py run-task [<taskname>]   # Run task(s)
-    python3 qas_client.py update-task <name> <json> # Update task
+    python3 qas_client.py update-task <taskname> <json> # Update task
     python3 qas_client.py delete-task <taskname>  # Delete task
     python3 qas_client.py update <json>           # Update config
 """
@@ -129,44 +129,34 @@ def cmd_search(query: str, deep: bool = False):
         fail(get_error(result))
 
 
-def cmd_detail(shareurl: str, task: dict = {}):
-    """Get share detail - output key info only (max 10 files)"""
+def cmd_detail(shareurl: str, task: dict = {}, show_all: bool = False):
+    """Get share detail - output key info (max 10 files, or all with -a)"""
     data = {"shareurl": shareurl}
     if task:
         data["task"] = task  # type: ignore
     result = post("/get_share_detail", data)
     if result.get("success"):
         result_data = result["data"]
-
-        # Get share info (contains title, file_num, etc.)
         share_info = result_data.get("share", {})
-
-        # Get file list
         file_list = result_data.get("list", [])
         total_count = len(file_list)
 
-        # Output key info
         info = {"name": share_info.get("title"), "total": total_count, "files": []}
 
-        # Extract key file info (max 10)
-        files = file_list[:10]
+        files = file_list if show_all else file_list[:10]
         for f in files:
             file_info = {
                 "name": f.get("file_name"),
                 "fid": f.get("fid"),
                 "is_dir": f.get("dir", False),
                 "size": f.get("size", 0),
+                "type": f.get("obj_category", 0),
             }
-            # Include category for files
-            if f.get("category") is not None:
-                file_info["type"] = "video" if f.get("category") == 1 else "other"
             info["files"].append(file_info)
 
-        # Add note if there are more files
-        if total_count > 10:
+        if not show_all and total_count > 10:
             info["note"] = f"...还有 {total_count - 10} 个文件"
 
-        # Add path info if available
         if share_info.get("path_info"):
             info["path"] = share_info["path_info"]
 
@@ -386,6 +376,7 @@ def main():
     )
     parser.add_argument("args", nargs="*", help="Command arguments")
     parser.add_argument("--deep", "-d", action="store_true", help="Deep search")
+    parser.add_argument("--all", "-a", action="store_true", help="Show all files (detail)")
 
     args = parser.parse_args()
 
@@ -404,7 +395,7 @@ def main():
         if not args.args:
             fail("Usage: detail <shareurl>")
             sys.exit(1)
-        cmd_detail(args.args[0])
+        cmd_detail(args.args[0], show_all=args.all)
     elif args.command == "add-task":
         if not args.args:
             fail("Usage: add-task <json_string_or_file>")

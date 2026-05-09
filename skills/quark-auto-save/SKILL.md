@@ -22,8 +22,8 @@ Manage quark-auto-save(QAS, 夸克自动转存, 夸克转存, 夸克订阅) task
 When user send message like `https://pan.quark.cn/s/***`, get detail, add a QAS task.
 
 **WIKI:**
-- RegexRename: https://github.com/Cp0204/quark-auto-save/wiki/%E6%AD%A3%E5%88%99%E5%A4%84%E7%90%86%E6%95%99%E7%A8%8B
-- MagicRegex: https://github.com/Cp0204/quark-auto-save/wiki/%E9%AD%94%E6%B3%95%E5%8C%B9%E9%85%8D%E5%92%8C%E9%AD%94%E6%B3%95%E5%8F%98%E9%87%8F
+- RegexRename: https://github.com/Cp0204/quark-auto-save/wiki/正则处理教程
+- MagicRegex: https://github.com/Cp0204/quark-auto-save/wiki/魔法匹配和魔法变量
 
 ## ⚠️ Prerequisites
 
@@ -54,6 +54,7 @@ After the user sets the token, the following analysis must be performed and reco
    - Anime Directory: /video/anime/{name}
    - Movie Directory: /video/movie/{name}
    - Naming Pattern: $TV_MAGIC (e.g., 都是她的错.S01E01.mp4)
+   ...
    ```
 
 ## Python Client
@@ -61,18 +62,17 @@ After the user sets the token, the following analysis must be performed and reco
 Use `{baseDir}/scripts/qas_client.py` for all operations:
 
 ```bash
-python3 {baseDir}/scripts/qas_client.py data                            # Get all config & tasks
+python3 {baseDir}/scripts/qas_client.py data                           # Get all config & tasks
 python3 {baseDir}/scripts/qas_client.py search "query" [-d]            # Search resources
-python3 {baseDir}/scripts/qas_client.py detail "<shareurl>"            # Get share detail
+python3 {baseDir}/scripts/qas_client.py detail "<shareurl>" [-a]       # Get share detail (-a for all files)
 python3 {baseDir}/scripts/qas_client.py savepath "/path"               # Check savepath
+python3 {baseDir}/scripts/qas_client.py delete "fid"                   # Delete file
 python3 {baseDir}/scripts/qas_client.py add-task '{"taskname": "Name", ...}' # Add task
-python3 {baseDir}/scripts/qas_client.py run-task [taskname|json]            # Run task(s)
-python3 {baseDir}/scripts/qas_client.py update-task "Name" '{"savepath": "/new"}' # Update task
-python3 {baseDir}/scripts/qas_client.py delete-task "TaskName"         # Delete task by name
+python3 {baseDir}/scripts/qas_client.py run-task [taskname|json]             # Run task(s)
+python3 {baseDir}/scripts/qas_client.py update-task "TaskName" '{"savepath": "/new"}' # Update task
+python3 {baseDir}/scripts/qas_client.py delete-task "TaskName"         # Delete task
 python3 {baseDir}/scripts/qas_client.py update '{"key": "value"}'      # Update config
 ```
-
-
 
 ## Task Schema
 
@@ -148,15 +148,23 @@ python3 {baseDir}/scripts/qas_client.py add-task '{"taskname": "Black Mirror", "
    - If filenames already match the preferred format → use `".*"` (save as-is)
    - If filenames need renaming → write regex `pattern` to capture episode/season info, and `replace` with magic variables to produce the preferred format
    - Example: source `01.mp4`, preferred `{TASKNAME}.S01E01.mp4` → `"pattern": "^(\\d+)\\.mp4$", "replace": "{TASKNAME}.S01E\\1.{EXT}"`
-4. **Add task**: `python3 {baseDir}/scripts/qas_client.py add-task '{"taskname": "MediaName", "shareurl": "https://pan.quark.cn/s/xxx#/list/share/fid", "savepath": "<user_habit_path>", "pattern": "<pattern>", "replace": "<replace>"}'`
+4. **Execute**:
+   - **Completed series** (taskname contains `X集全`, `全X集`, `完结`, `全集`) → `run-task` (one-time transfer, no subscription)
+   - **Ongoing series** → `add-task` (subscription, auto-check for updates)
+   ```bash
+   # One-time (completed)
+   python3 {baseDir}/scripts/qas_client.py run-task '{"taskname": "MediaName", "shareurl": "...", "savepath": "...", "pattern": "..."}'
+   # Subscription (ongoing)
+   python3 {baseDir}/scripts/qas_client.py add-task '{"taskname": "MediaName", "shareurl": "...", "savepath": "...", "pattern": "..."}'
+   ```
    - `savepath` and `pattern` must follow the user's existing habits recorded in TOOLS.md
-
-**Tip:** If the search result `taskname` contains keywords like `全X集`, `完结`, `全集`, it's a completed series — run directly with `run-task <json>` (one-time transfer) instead of `add-task` (subscription). Still do step 3 to determine the correct `pattern` & `replace`.
 
 ### Check Invalid Tasks
 1. **Get tasks**: `python3 {baseDir}/scripts/qas_client.py data`
-2. **Check for `shareurl_ban` key in tasklist**
-3. **Replace invalid URLs and remove `shareurl_ban` key**
+2. **Identify invalid tasks**: tasks with `shareurl_ban` key in tasklist
+3. **Find replacement**: `python3 {baseDir}/scripts/qas_client.py search "<taskname>" -d` to get a new shareurl
+4. **Verify**: `python3 {baseDir}/scripts/qas_client.py detail "<new_shareurl>"` — check not banned, file list matches
+5. **Update task**: `python3 {baseDir}/scripts/qas_client.py update-task "TaskName" '{"shareurl": "<verified_url>", "shareurl_ban": ""}'`
 
 ### Delete Task
 ```bash
@@ -178,8 +186,8 @@ python3 {baseDir}/scripts/qas_client.py update '{"crontab": "0 9 * * *"}'
 
 ### Run Tasks
 ```bash
-python3 {baseDir}/scripts/qas_client.py run-task                    # All tasks
-python3 {baseDir}/scripts/qas_client.py run-task "TaskName"       # Specific task
+python3 {baseDir}/scripts/qas_client.py run-task             # All tasks
+python3 {baseDir}/scripts/qas_client.py run-task "TaskName"  # Specific task
 python3 {baseDir}/scripts/qas_client.py run-task '{"taskname": "Test", ...}'  # Direct task
 ```
 
