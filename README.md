@@ -213,6 +213,14 @@ docker run --rm -v /var/run/docker.sock:/var/run/docker.sock containrrr/watchtow
 
 开源仅供学习与交流使用，未盈利也未授权商业使用，严禁用于非法用途。
 
+## LICENSE
+
+本项目基于 [AGPL-3.0](LICENSE)  协议开源，这意味着：
+
+1. **传染性与开源义务**：任何使用了本项目代码的作品（包括修改或链接）在分发时，必须以 AGPL-3.0 开源。
+2. **网络服务也需开源**：基于该项目衍生的网络服务（如 API、Web 等）需要向用户提供修改后源代码的获取方式。
+3. **修改与分发要求**：必须保留原版权声明和许可证、修改后的文件需标注修改说明、分发时必须提供完整的源代码。
+
 ## Sponsor
 
 CDN acceleration and security protection for this project are sponsored by Tencent EdgeOne.

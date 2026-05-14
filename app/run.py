@@ -423,9 +423,20 @@ def get_share_detail():
 def get_savepath_detail():
     if not is_login():
         return jsonify({"success": False, "message": "未登录"})
+    try:
+        if fid := request.args.get("fid", None):
+            file_list = _get_file_list(fid=fid)
+        elif path := request.args.get("path", "/"):
+            file_list = _get_file_list(path=path)
+        return jsonify({"success": True, "data": file_list})
+    except Exception as e:
+        return jsonify({"success": False, "data": {"error": str(e)}})
+
+
+def _get_file_list(fid: str = None, path: str = None):
     account = Quark(config_data["cookie"][0])
     paths = []
-    if path := request.args.get("path"):
+    if path and not fid:
         path = re.sub(r"/+", "/", path)
         if path == "/":
             fid = 0
@@ -445,26 +456,62 @@ def get_savepath_detail():
                     for get_fid, dir_name in zip(get_fids, dir_names)
                 ]
             else:
-                return jsonify({"success": False, "data": {"error": "获取fid失败"}})
-    else:
-        fid = request.args.get("fid", "0")
+                raise FileNotFoundError("获取fid失败")
     file_list = {
+        "fid": fid,
         "list": account.ls_dir(fid)["data"]["list"],
         "paths": paths,
     }
-    return jsonify({"success": True, "data": file_list})
+    return file_list
+
+
+def _path_to_fid(path):
+    """根据路径获取文件的fid"""
+    if not path:
+        raise ValueError("路径不能为空")
+    path = re.sub(r"/+", "/", path)
+    if path == "/":
+        return 0
+    file_list = _get_file_list(None, os.path.dirname(path))
+    for file in file_list["list"]:
+        if file["file_name"] == os.path.basename(path):
+            return file["fid"]
+    raise FileNotFoundError(f"未找到文件: {path}")
 
 
 @app.route("/delete_file", methods=["POST"])
 def delete_file():
     if not is_login():
         return jsonify({"success": False, "message": "未登录"})
-    account = Quark(config_data["cookie"][0])
-    if fid := request.json.get("fid"):
-        response = account.delete([fid])
-    else:
-        response = {"success": False, "message": "缺失必要字段: fid"}
-    return jsonify(response)
+    try:
+        fid = request.json.get("fid") or _path_to_fid(request.json.get("path"))
+        if fid:
+            account = Quark(config_data["cookie"][0])
+            response = account.delete([fid])
+            response["success"] = response["code"] == 0
+            return jsonify(response)
+        else:
+            raise ValueError("缺失必要字段: fid 或 path")
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
+
+
+@app.route("/rename_file", methods=["POST"])
+def rename_file():
+    if not is_login():
+        return jsonify({"success": False, "message": "未登录"})
+    try:
+        fid = request.json.get("fid") or _path_to_fid(request.json.get("path"))
+        file_name = request.json.get("file_name")
+        if fid and file_name:
+            account = Quark(config_data["cookie"][0])
+            response = account.rename(fid, file_name)
+            response["success"] = response["code"] == 0
+            return jsonify(response)
+        else:
+            raise ValueError("缺失必要字段: fid, file_name")
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
 
 
 # 添加任务接口

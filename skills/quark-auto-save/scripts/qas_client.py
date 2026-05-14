@@ -4,16 +4,17 @@
 quark-auto-Save API Python Wrapper
 
 Usage:
-    python3 qas_client.py data                    # Get all config
-    python3 qas_client.py search <query> [-d]     # Search resources
-    python3 qas_client.py detail <shareurl>       # Get share detail
-    python3 qas_client.py savepath <path>         # Check savepath
-    python3 qas_client.py delete <fid>            # Delete file
-    python3 qas_client.py add-task <task.json>    # Add task
-    python3 qas_client.py run-task [<taskname>]   # Run task(s)
-    python3 qas_client.py update-task <taskname> <json> # Update task
-    python3 qas_client.py delete-task <taskname>  # Delete task
-    python3 qas_client.py update <json>           # Update config
+    python3 qas_client.py get-config                         # Get all config & tasks
+    python3 qas_client.py search <query> [-d]                # Search resources
+    python3 qas_client.py get-share <shareurl> [-a]          # Get share detail
+    python3 qas_client.py check-path <path>                  # Check savepath
+    python3 qas_client.py delete-file <path>                 # Delete cloud file
+    python3 qas_client.py rename-file <path> <file_name>     # Rename cloud file
+    python3 qas_client.py add-task <task.json>               # Add task
+    python3 qas_client.py run-task [taskname|json]           # Run task(s)
+    python3 qas_client.py update-task <name> <json>          # Update task
+    python3 qas_client.py delete-task <taskname>             # Delete task
+    python3 qas_client.py update-config <json>               # Update config
 """
 
 import os
@@ -104,7 +105,7 @@ def post(endpoint: str, data: dict = {}, raw: bool = False) -> dict:
         return {"success": False, "message": str(e)}
 
 
-def cmd_data():
+def cmd_get_config():
     """Get all config and tasks"""
     result = get("/data")
     if result.get("success"):
@@ -129,7 +130,7 @@ def cmd_search(query: str, deep: bool = False):
         fail(get_error(result))
 
 
-def cmd_detail(shareurl: str, task: dict = {}, show_all: bool = False):
+def cmd_get_share(shareurl: str, task: dict = {}, show_all: bool = False):
     """Get share detail - output key info (max 10 files, or all with -a)"""
     data = {"shareurl": shareurl}
     if task:
@@ -254,7 +255,7 @@ def cmd_run(taskname: str = "", task_json: str = ""):
         fail(get_error(result))
 
 
-def cmd_savepath(path: str = "", fid: str = ""):
+def cmd_check_path(path: str = "", fid: str = ""):
     """Get savepath detail - output key info only (max 10 files)"""
     params = {}
     if path:
@@ -309,7 +310,7 @@ def cmd_delete_task(taskname: str):
         fail(get_error(update_result))
 
 
-def cmd_update(update_json: str):
+def cmd_update_config(update_json: str):
     """Update config via JSON string or file"""
     result = get("/data")
     if not result.get("success"):
@@ -347,9 +348,18 @@ def cmd_update_task(taskname: str, update_json: str):
         fail(get_error(update_result))
 
 
-def cmd_delete(fid: str):
-    """Delete file"""
-    result = post("/delete_file", {"fid": fid})
+def cmd_delete_file(path: str):
+    """Delete cloud file by path"""
+    result = post("/delete_file", {"path": path})
+    if result.get("success"):
+        ok()
+    else:
+        fail(get_error(result))
+
+
+def cmd_rename_file(path: str, file_name: str):
+    """Rename cloud file by path"""
+    result = post("/rename_file", {"path": path, "file_name": file_name})
     if result.get("success"):
         ok()
     else:
@@ -361,15 +371,16 @@ def main():
     parser.add_argument(
         "command",
         choices=[
-            "data",
+            "get-config",
             "search",
-            "detail",
+            "get-share",
             "add-task",
             "run-task",
-            "savepath",
-            "delete",
+            "check-path",
+            "delete-file",
             "delete-task",
-            "update",
+            "rename-file",
+            "update-config",
             "update-task",
         ],
         help="Command to execute",
@@ -384,18 +395,18 @@ def main():
         fail("QAS_TOKEN not set. Set environment variable or update TOOLS.md")
         sys.exit(1)
 
-    if args.command == "data":
-        cmd_data()
+    if args.command == "get-config":
+        cmd_get_config()
     elif args.command == "search":
         if not args.args:
             fail("Usage: search <query>")
             sys.exit(1)
         cmd_search(args.args[0], args.deep)
-    elif args.command == "detail":
+    elif args.command == "get-share":
         if not args.args:
-            fail("Usage: detail <shareurl>")
+            fail("Usage: get-share <shareurl>")
             sys.exit(1)
-        cmd_detail(args.args[0], show_all=args.all)
+        cmd_get_share(args.args[0], show_all=args.all)
     elif args.command == "add-task":
         if not args.args:
             fail("Usage: add-task <json_string_or_file>")
@@ -417,26 +428,31 @@ def main():
         else:
             fail("Usage: run-task [taskname|json_string]")
             sys.exit(1)
-    elif args.command == "savepath":
+    elif args.command == "check-path":
         if not args.args:
-            fail("Usage: savepath <path>")
+            fail("Usage: check-path <path>")
             sys.exit(1)
-        cmd_savepath(args.args[0])
-    elif args.command == "delete":
+        cmd_check_path(args.args[0])
+    elif args.command == "delete-file":
         if not args.args:
-            fail("Usage: delete <fid>")
+            fail("Usage: delete-file <path>")
             sys.exit(1)
-        cmd_delete(args.args[0])
+        cmd_delete_file(args.args[0])
     elif args.command == "delete-task":
         if not args.args:
             fail("Usage: delete-task <taskname>")
             sys.exit(1)
         cmd_delete_task(args.args[0])
-    elif args.command == "update":
-        if not args.args:
-            fail("Usage: update <json_string_or_file>")
+    elif args.command == "rename-file":
+        if len(args.args) < 2:
+            fail("Usage: rename-file <path> <file_name>")
             sys.exit(1)
-        cmd_update(args.args[0])
+        cmd_rename_file(args.args[0], args.args[1])
+    elif args.command == "update-config":
+        if not args.args:
+            fail("Usage: update-config <json_string_or_file>")
+            sys.exit(1)
+        cmd_update_config(args.args[0])
     elif args.command == "update-task":
         if len(args.args) < 2:
             fail("Usage: update-task <taskname> <json_string_or_file>")
