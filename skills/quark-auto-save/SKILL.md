@@ -1,6 +1,6 @@
 ---
 name: quark-auto-save
-description: Manage quark-auto-save(QAS, 夸克自动转存, 夸克转存, 夸克订阅) tasks via CLI.
+description: Manage quark-auto-save tasks via CLI. (QAS, 夸克自动转存, 夸克转存, 夸克订阅, 管理任务, 运行任务, 修复失效链接, pan.quark.cn)
 metadata:
   openclaw:
     emoji: "💾"
@@ -17,7 +17,9 @@ metadata:
 
 # quark-auto-save
 
-Manage quark-auto-save(QAS, 夸克自动转存, 夸克转存, 夸克订阅) tasks via CLI.
+Manage quark-auto-save tasks via CLI.
+
+QAS, 夸克自动转存, 夸克转存, 夸克订阅, 管理任务, 运行任务, 修复失效链接
 
 When user send message like `https://pan.quark.cn/s/***`, get detail, add a QAS task.
 
@@ -27,7 +29,7 @@ When user send message like `https://pan.quark.cn/s/***`, get detail, add a QAS 
 - `QAS_BASE_URL` -  User provided, e.g., http://192.168.1.x:5005
 - `QAS_TOKEN` - User provided
 
-**Actual configuration values are recorded in TOOLS.md, Do not modify SKILL.md**
+> Set in the skill's env config (e.g., `openclaw.json` → `skills.entries.quark-auto-save.env.QAS_BASE_URL`). Restart gateway after editing.
 
 ## First Configuration: Analyze User Habits
 
